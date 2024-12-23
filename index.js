@@ -10,7 +10,6 @@ const VAULT_WALLET_ADDRESS = process.env.VAULT_WALLET_ADDRESS;
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 const CLAIM_INTERVAL = parseInt(process.env.CLAIM_INTERVAL) || 10; // Default 10 detik
 const CLAIM_URL = process.env.CLAIM_URL;  // URL klaim dari .env
-const TRANSFER_AMOUNT = parseFloat(process.env.TRANSFER_AMOUNT) || 10; // Default 10 token
 
 // ABI untuk token ERC-20 (standar)
 const TOKEN_ABI = [
@@ -68,17 +67,27 @@ async function autoClaim() {
   }
 }
 
-// Fungsi untuk mentransfer token
-async function transferToken(amount) {
+// Fungsi untuk mentransfer semua token
+async function transferAllTokens() {
   const provider = new ethers.WebSocketProvider(ALCHEMY_WSS_URL);
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
   const tokenContract = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, wallet);
 
-  const tokenAmount = ethers.parseUnits(amount.toString(), 18);
-
   try {
-    const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, tokenAmount);
+    // Ambil saldo token dari wallet
+    const balance = await tokenContract.balanceOf(wallet.address);
+    console.log(`Saldo token saat ini: ${ethers.formatUnits(balance, 18)} token`);
+
+    if (balance.isZero()) {
+      console.log("Tidak ada token untuk ditransfer.");
+      return;
+    }
+
+    // Transfer seluruh saldo ke wallet vault
+    const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance);
     console.log(`Transaksi dikirim: ${tx.hash}`);
+
+    // Tunggu konfirmasi transaksi
     const receipt = await tx.wait();
     console.log(`Transaksi berhasil! Block number: ${receipt.blockNumber}`);
   } catch (error) {
@@ -90,7 +99,7 @@ async function transferToken(amount) {
 async function autoClaimAndTransfer() {
   try {
     await autoClaim();
-    await transferToken(TRANSFER_AMOUNT);
+    await transferAllTokens();  // Transfer semua token
   } catch (error) {
     console.error(`Error utama: ${error.message}`);
   }
