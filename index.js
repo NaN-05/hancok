@@ -39,13 +39,6 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const VAULT_WALLET_ADDRESS = process.env.VAULT_WALLET_ADDRESS;
 const TOKEN_ADDRESSES = process.env.TOKEN_ADDRESSES.split(',');
 
-// Fungsi untuk mendapatkan harga gas tinggi
-async function getHighGasPrice() {
-  const gasPrice = await provider.getGasPrice();
-  // Gandakan harga gas untuk mempercepat transaksi
-  return gasPrice.mul(2); // Anda bisa mengganti angka 2 untuk membuatnya lebih tinggi (misalnya gasPrice.mul(3))
-}
-
 // Fungsi untuk memeriksa saldo token dan transfer
 async function transferAllTokens(tokenContract, wallet) {
   const balance = await tokenContract.balanceOf(wallet.address);
@@ -56,24 +49,31 @@ async function transferAllTokens(tokenContract, wallet) {
     return;
   }
 
-  // Mengambil estimasi biaya gas
-  const gasPrice = await getHighGasPrice();
+  // Mengambil estimasi biaya gas dan transfer
   const gasEstimate = await tokenContract.estimateGas.transfer(VAULT_WALLET_ADDRESS, balance);
-  const gasCost = gasEstimate.mul(gasPrice);
+  const gasPrice = await provider.getGasPrice();
 
-  // Memastikan saldo cukup untuk biaya gas dan transfer
-  const requiredBalance = balance.add(gasCost);
-  if (balance.lt(requiredBalance)) {
-    logger.info("Saldo tidak cukup untuk biaya gas dan transfer.");
+  // Hitung gas dengan skenario 2x
+  const gasCostDouble = gasEstimate.mul(gasPrice.mul(2));
+  const gasCostNormal = gasEstimate.mul(gasPrice);
+
+  if (balance.gt(gasCostDouble)) {
+    logger.info("Menggunakan gas 2x untuk mempercepat transaksi.");
+    const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, {
+      gasPrice: gasPrice.mul(2) // Menggunakan gas 2x
+    });
+    logger.info(`Transaksi dikirim dengan gas 2x: ${tx.hash}`);
+  } else if (balance.gt(gasCostNormal)) {
+    logger.info("Menggunakan gas normal karena saldo tidak cukup untuk gas 2x.");
+    const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, {
+      gasPrice: gasPrice // Menggunakan gas normal
+    });
+    logger.info(`Transaksi dikirim dengan gas normal: ${tx.hash}`);
+  } else {
+    logger.info("Saldo tidak cukup untuk biaya gas.");
+    await sendTelegramMessage("Saldo tidak cukup untuk melakukan transfer.");
     return;
   }
-
-  logger.info('Mengirim token ke Vault...');
-
-  const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, {
-    gasPrice: gasPrice // Menggunakan gas lebih tinggi untuk mempercepat transaksi
-  });
-  logger.info(`Transaksi dikirim: ${tx.hash}`);
 
   const startTime = Date.now();
   const receipt = await tx.wait();
@@ -93,7 +93,12 @@ async function monitorTokens() {
     tokenContract.on('Transfer', async (from, to, value) => {
       if (to.toLowerCase() === VAULT_WALLET_ADDRESS.toLowerCase()) {
         logger.info(`Token diterima di Vault: ${ethers.utils.formatUnits(value, 18)} token`);
-        await transferAllTokens(tokenContract, new ethers.Wallet(PRIVATE_KEY, provider));
+        try {
+          await transferAllTokens(tokenContract, new ethers.Wallet(PRIVATE_KEY, provider));
+        } catch (error) {
+          logger.error(`Error saat transfer token: ${error.message}`);
+          await sendTelegramMessage(`Terjadi kesalahan saat transfer token: ${error.message}`);
+        }
       }
     });
   }
@@ -105,6 +110,7 @@ async function startMonitoring() {
     await monitorTokens();  // Memantau beberapa token dan transfer otomatis
   } catch (error) {
     logger.error(`Error utama: ${error.message}`);
+    await sendTelegramMessage(`Error utama: ${error.message}`);
   }
 }
 
