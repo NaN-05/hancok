@@ -19,6 +19,7 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 async function sendTelegramMessage(message) {
   try {
     await bot.telegram.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
+    logger.info('Pesan Telegram berhasil dikirim.');
   } catch (error) {
     logger.error("Error mengirim pesan Telegram:", error);
   }
@@ -67,18 +68,26 @@ async function transferAllTokens(tokenContract, wallet) {
     return;
   }
 
+  logger.info('Mengirim token ke Vault...');
+
   const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, {
     gasPrice: gasPrice // Menggunakan gas lebih tinggi untuk mempercepat transaksi
   });
   logger.info(`Transaksi dikirim: ${tx.hash}`);
 
+  const startTime = Date.now();
   const receipt = await tx.wait();
+  const endTime = Date.now();
+  const transactionTime = (endTime - startTime) / 1000; // Waktu dalam detik
+
   logger.info(`Transaksi berhasil! Block number: ${receipt.blockNumber}`);
+  logger.info(`Waktu transaksi: ${transactionTime} detik`);
   await sendTelegramMessage(`Token berhasil dikirim ke Vault! Transaksi Hash: ${tx.hash}`);
 }
 
 // Fungsi untuk memantau beberapa kontrak token
 async function monitorTokens() {
+  logger.info("Memulai pemantauan transfer token...");
   for (const tokenAddress of TOKEN_ADDRESSES) {
     const tokenContract = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
     tokenContract.on('Transfer', async (from, to, value) => {
