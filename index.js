@@ -32,9 +32,9 @@ const getChromiumPath = () => {
   }
 };
 
-// Fungsi untuk mencari tombol berdasarkan teks
+// Fungsi untuk mencari tombol berdasarkan teks menggunakan XPath
 async function findButtonByText(page, buttonText) {
-  const button = await page.$(`button:has-text("${buttonText}")`); // Menggunakan selector CSS
+  const [button] = await page.$x(`//button[contains(text(), '${buttonText}')]`);
   if (button) {
     console.log(`Tombol "${buttonText}" ditemukan.`);
     return button;
