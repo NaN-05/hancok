@@ -1,10 +1,10 @@
 require('dotenv').config();
 const { ethers } = require('ethers');
-const axios = require('axios');
+const { FlashbotsBundleProvider } = require('@flashbots/ethers-provider-bundle');
 const winston = require('winston');
 const { Telegraf } = require('telegraf');
 
-// Logging dengan winston
+// Logging menggunakan winston
 const logger = winston.createLogger({
   level: 'info',
   transports: [
@@ -21,99 +21,122 @@ async function sendTelegramMessage(message) {
     await bot.telegram.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
     logger.info('Pesan Telegram berhasil dikirim.');
   } catch (error) {
-    logger.error("Error mengirim pesan Telegram:", error);
+    logger.error('Error mengirim pesan Telegram:', error);
   }
 }
 
-// Konfigurasi Web3 dan kontrak ERC-20
+// Konfigurasi jaringan dan Flashbots
 const ALCHEMY_WSS_URL = process.env.ALCHEMY_WSS_URL;
-const provider = new ethers.WebSocketProvider(ALCHEMY_WSS_URL);
+const provider = new ethers.providers.WebSocketProvider(ALCHEMY_WSS_URL);
 const TOKEN_ABI = [
   "function balanceOf(address account) public view returns (uint256)",
   "function transfer(address recipient, uint256 amount) public returns (bool)",
   "event Transfer(address indexed from, address indexed to, uint256 value)"
 ];
+const FLASHBOTS_URL = process.env.FLASHBOTS_URL || 'https://relay.flashbots.net';
 
-// Mengakses variabel lingkungan dari .env
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const VAULT_WALLET_ADDRESS = process.env.VAULT_WALLET_ADDRESS;
 const TOKEN_ADDRESSES = process.env.TOKEN_ADDRESSES.split(',');
 
-// Fungsi untuk memeriksa saldo token dan transfer
-async function transferAllTokens(tokenContract, wallet) {
-  const balance = await tokenContract.balanceOf(wallet.address);
-  logger.info(`Saldo token saat ini: ${ethers.utils.formatUnits(balance, 18)} token`);
+const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+let flashbotsProvider;
 
-  if (balance.isZero()) {
-    logger.info("Tidak ada token untuk ditransfer.");
-    return;
-  }
-
-  // Mengambil estimasi biaya gas dan transfer
-  const gasEstimate = await tokenContract.estimateGas.transfer(VAULT_WALLET_ADDRESS, balance);
-  const gasPrice = await provider.getGasPrice();
-
-  // Hitung gas dengan skenario 2x
-  const gasCostDouble = gasEstimate.mul(gasPrice.mul(2));
-  const gasCostNormal = gasEstimate.mul(gasPrice);
-
-  if (balance.gt(gasCostDouble)) {
-    logger.info("Menggunakan gas 2x untuk mempercepat transaksi.");
-    const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, {
-      gasPrice: gasPrice.mul(2) // Menggunakan gas 2x
-    });
-    logger.info(`Transaksi dikirim dengan gas 2x: ${tx.hash}`);
-  } else if (balance.gt(gasCostNormal)) {
-    logger.info("Menggunakan gas normal karena saldo tidak cukup untuk gas 2x.");
-    const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, {
-      gasPrice: gasPrice // Menggunakan gas normal
-    });
-    logger.info(`Transaksi dikirim dengan gas normal: ${tx.hash}`);
-  } else {
-    logger.info("Saldo tidak cukup untuk biaya gas.");
-    await sendTelegramMessage("Saldo tidak cukup untuk melakukan transfer.");
-    return;
-  }
-
-  const startTime = Date.now();
-  const receipt = await tx.wait();
-  const endTime = Date.now();
-  const transactionTime = (endTime - startTime) / 1000; // Waktu dalam detik
-
-  logger.info(`Transaksi berhasil! Block number: ${receipt.blockNumber}`);
-  logger.info(`Waktu transaksi: ${transactionTime} detik`);
-  await sendTelegramMessage(`Token berhasil dikirim ke Vault! Transaksi Hash: ${tx.hash}`);
+// Inisialisasi Flashbots
+async function initializeFlashbots() {
+  const authSigner = ethers.Wallet.createRandom();
+  flashbotsProvider = await FlashbotsBundleProvider.create(provider, authSigner, FLASHBOTS_URL);
+  logger.info('Flashbots Provider berhasil diinisialisasi.');
 }
 
-// Fungsi untuk memantau beberapa kontrak token
+// Penanganan harga gas dinamis
+async function getGasPrice(isHighPriority) {
+  const gasPrice = await provider.getGasPrice();
+  return isHighPriority ? gasPrice.mul(2) : gasPrice;
+}
+
+// Transfer token dengan Flashbots atau fallback
+async function transferTokens(tokenContract, wallet) {
+  const balance = await tokenContract.balanceOf(wallet.address);
+  logger.info(`Saldo token: ${ethers.utils.formatUnits(balance, 18)} token`);
+
+  if (balance.isZero()) {
+    logger.info('Tidak ada token untuk ditransfer.');
+    return;
+  }
+
+  const gasPrice = await getGasPrice(true);
+  const gasEstimate = await tokenContract.estimateGas.transfer(VAULT_WALLET_ADDRESS, balance);
+  const gasCost = gasEstimate.mul(gasPrice);
+  const nativeBalance = await provider.getBalance(wallet.address);
+
+  if (nativeBalance.lt(gasCost)) {
+    logger.info('Saldo tidak cukup untuk biaya gas tinggi, menggunakan gas standar.');
+    const fallbackGasPrice = await getGasPrice(false);
+    return sendTransaction(tokenContract, balance, wallet, fallbackGasPrice);
+  }
+
+  try {
+    logger.info('Menggunakan Flashbots untuk transaksi...');
+    const txBundle = [
+      {
+        signer: wallet,
+        transaction: {
+          to: tokenContract.address,
+          data: tokenContract.interface.encodeFunctionData('transfer', [VAULT_WALLET_ADDRESS, balance]),
+          gasPrice: gasPrice,
+          gasLimit: gasEstimate
+        }
+      }
+    ];
+    const result = await flashbotsProvider.sendBundle(txBundle, await provider.getBlockNumber() + 1);
+    if ('error' in result) throw new Error(result.error.message);
+
+    const receipt = await result.wait();
+    logger.info('Transaksi berhasil melalui Flashbots:', receipt.transactionHash);
+    await sendTelegramMessage(`Token berhasil dikirim ke Vault melalui Flashbots: ${receipt.transactionHash}`);
+  } catch (error) {
+    logger.error('Flashbots gagal, mencoba melalui mempool publik:', error.message);
+    await sendTransaction(tokenContract, balance, wallet, gasPrice);
+  }
+}
+
+// Fallback transaksi mempool publik
+async function sendTransaction(tokenContract, balance, wallet, gasPrice) {
+  try {
+    const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, { gasPrice });
+    logger.info(`Transaksi dikirim: ${tx.hash}`);
+    const receipt = await tx.wait();
+    logger.info(`Transaksi berhasil! Hash: ${receipt.transactionHash}`);
+    await sendTelegramMessage(`Token berhasil dikirim ke Vault! Transaksi Hash: ${receipt.transactionHash}`);
+  } catch (error) {
+    logger.error('Transaksi gagal:', error.message);
+  }
+}
+
+// Memantau token transfer
 async function monitorTokens() {
-  logger.info("Memulai pemantauan transfer token...");
+  logger.info('Memulai pemantauan transfer token...');
   for (const tokenAddress of TOKEN_ADDRESSES) {
     const tokenContract = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
     tokenContract.on('Transfer', async (from, to, value) => {
-      if (to.toLowerCase() === VAULT_WALLET_ADDRESS.toLowerCase()) {
-        logger.info(`Token diterima di Vault: ${ethers.utils.formatUnits(value, 18)} token`);
-        try {
-          await transferAllTokens(tokenContract, new ethers.Wallet(PRIVATE_KEY, provider));
-        } catch (error) {
-          logger.error(`Error saat transfer token: ${error.message}`);
-          await sendTelegramMessage(`Terjadi kesalahan saat transfer token: ${error.message}`);
-        }
+      if (to.toLowerCase() === wallet.address.toLowerCase()) {
+        logger.info(`Token diterima: ${ethers.utils.formatUnits(value, 18)} token`);
+        await transferTokens(tokenContract, wallet);
       }
     });
   }
 }
 
-// Fungsi utama untuk memulai pemantauan dan transfer
+// Inisialisasi dan jalankan pemantauan
 async function startMonitoring() {
   try {
-    await monitorTokens();  // Memantau beberapa token dan transfer otomatis
+    await initializeFlashbots();
+    await monitorTokens();
   } catch (error) {
-    logger.error(`Error utama: ${error.message}`);
-    await sendTelegramMessage(`Error utama: ${error.message}`);
+    logger.error('Error utama:', error.message);
   }
 }
 
-// Menjalankan skrip untuk memantau transfer token
 startMonitoring();
-logger.info("Pemantauan transfer token dimulai.");
+logger.info('Pemantauan token dimulai.');
