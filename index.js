@@ -1,98 +1,75 @@
 require('dotenv').config();  // Memuat variabel dari file .env
-const fs = require('fs');
+
 const puppeteer = require('puppeteer-core'); // Menggunakan puppeteer-core
 const { ethers } = require('ethers');
-const winston = require('winston'); // Untuk logging
 
-// Logger untuk mencatat proses
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`)
-  ),
-  transports: [new winston.transports.Console()],
-});
-
-// Validasi variabel lingkungan
+// Mengakses variabel lingkungan dari .env
 const ALCHEMY_WSS_URL = process.env.ALCHEMY_WSS_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const VAULT_WALLET_ADDRESS = process.env.VAULT_WALLET_ADDRESS;
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 const CLAIM_INTERVAL = parseInt(process.env.CLAIM_INTERVAL) || 10; // Default 10 detik
-const TRANSFER_AMOUNT = parseFloat(process.env.TRANSFER_AMOUNT) || 10; // Default transfer 10 token
-const CLAIM_URL = process.env.CLAIM_URL;
-const LOGIN_BUTTON_SELECTOR = process.env.LOGIN_BUTTON_SELECTOR;
-const CLAIM_BUTTON_SELECTOR = process.env.CLAIM_BUTTON_SELECTOR;
-
-if (!ALCHEMY_WSS_URL || !PRIVATE_KEY || !VAULT_WALLET_ADDRESS || !TOKEN_ADDRESS || !CLAIM_URL || !LOGIN_BUTTON_SELECTOR || !CLAIM_BUTTON_SELECTOR) {
-  throw new Error("Harap pastikan semua variabel lingkungan di file .env telah diatur dengan benar.");
-}
+const CLAIM_URL = process.env.CLAIM_URL;  // URL klaim dari .env
+const TRANSFER_AMOUNT = parseFloat(process.env.TRANSFER_AMOUNT) || 10; // Default 10 token
 
 // ABI untuk token ERC-20 (standar)
 const TOKEN_ABI = [
-  "function totalSupply() public view returns (uint256)",
   "function balanceOf(address account) public view returns (uint256)",
-  "function transfer(address recipient, uint256 amount) public returns (bool)",
-  "function approve(address spender, uint256 amount) public returns (bool)",
-  "function allowance(address owner, address spender) public view returns (uint256)"
+  "function transfer(address recipient, uint256 amount) public returns (bool)"
 ];
 
-// Fungsi untuk mendeteksi path Chromium berdasarkan platform (Termux atau VPS)
+// Fungsi untuk mendeteksi path Chromium berdasarkan platform
 const getChromiumPath = () => {
   if (process.platform === 'android') {
-    return '/data/data/com.termux/files/usr/bin/chromium'; // Path di Termux
+    return '/data/data/com.termux/files/usr/bin/chromium';
   } else {
-    return '/usr/bin/chromium-browser'; // Path di VPS
+    return '/usr/bin/chromium-browser';
   }
 };
 
-// Validasi apakah Chromium tersedia
-const chromiumPath = getChromiumPath();
-if (!fs.existsSync(chromiumPath)) {
-  throw new Error(`Chromium tidak ditemukan di path: ${chromiumPath}`);
+// Fungsi untuk mencari tombol berdasarkan teks
+async function findButtonByText(page, buttonText) {
+  const [button] = await page.$x(`//button[contains(text(), '${buttonText}')]`);
+  if (button) {
+    console.log(`Tombol "${buttonText}" ditemukan.`);
+    return button;
+  } else {
+    throw new Error(`Tombol "${buttonText}" tidak ditemukan.`);
+  }
 }
 
-// Fungsi untuk login dan klaim token
+// Fungsi login dan klaim token
 async function autoClaim() {
-  logger.info('Memulai proses klaim token...');
   const browser = await puppeteer.launch({
-    executablePath: chromiumPath,
+    executablePath: getChromiumPath(),
     headless: true
   });
 
   const page = await browser.newPage();
+  await page.goto(CLAIM_URL);
 
   try {
-    // Buka halaman klaim token
-    await page.goto(CLAIM_URL);
-    logger.info('Berhasil membuka halaman klaim.');
+    // Login menggunakan teks tombol
+    const loginButton = await findButtonByText(page, "Login");
+    await loginButton.click();
+    console.log("Berhasil login.");
 
-    // Tunggu dan klik tombol login
-    await page.waitForSelector(LOGIN_BUTTON_SELECTOR, { timeout: 10000 });
-    await page.click(LOGIN_BUTTON_SELECTOR);
-    logger.info('Login menggunakan wallet berhasil.');
+    // Tunggu hingga tombol klaim muncul dan klik
+    await page.waitForTimeout(5000); // Tunggu 5 detik
+    const claimButton = await findButtonByText(page, "Claim");
+    await claimButton.click();
+    console.log("Token berhasil diklaim!");
 
-    // Tunggu popup wallet terbuka
-    await page.waitForTimeout(5000);
-
-    // Tunggu dan klik tombol klaim
-    await page.waitForSelector(CLAIM_BUTTON_SELECTOR, { timeout: 10000 });
-    await page.click(CLAIM_BUTTON_SELECTOR);
-    logger.info('Token berhasil diklaim.');
-
-    // Tunggu beberapa detik untuk memastikan proses selesai
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(5000); // Tunggu 5 detik
   } catch (error) {
-    logger.error(`Terjadi kesalahan saat klaim: ${error.message}`);
+    console.error(`Error saat login/klaim: ${error.message}`);
   } finally {
     await browser.close();
   }
 }
 
-// Fungsi untuk transfer token ke wallet vault
+// Fungsi untuk mentransfer token
 async function transferToken(amount) {
-  logger.info('Memulai proses transfer token...');
   const provider = new ethers.WebSocketProvider(ALCHEMY_WSS_URL);
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
   const tokenContract = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, wallet);
@@ -101,29 +78,28 @@ async function transferToken(amount) {
 
   try {
     const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, tokenAmount);
-    logger.info(`Transaksi dikirim: ${tx.hash}`);
-
+    console.log(`Transaksi dikirim: ${tx.hash}`);
     const receipt = await tx.wait();
-    logger.info(`Transaksi berhasil! Block number: ${receipt.blockNumber}`);
+    console.log(`Transaksi berhasil! Block number: ${receipt.blockNumber}`);
   } catch (error) {
-    logger.error(`Kesalahan saat transfer token: ${error.message}`);
+    console.error(`Error saat transfer token: ${error.message}`);
   }
 }
 
-// Fungsi utama untuk klaim dan transfer token
+// Fungsi utama untuk klaim dan transfer
 async function autoClaimAndTransfer() {
   try {
-    await autoClaim();  // Klaim token
-    await transferToken(TRANSFER_AMOUNT);  // Transfer token ke vault
+    await autoClaim();
+    await transferToken(TRANSFER_AMOUNT);
   } catch (error) {
-    logger.error(`Terjadi kesalahan pada proses utama: ${error.message}`);
+    console.error(`Error utama: ${error.message}`);
   }
 }
 
-// Menjalankan klaim dan transfer secara real-time pada interval tertentu
+// Jalankan skrip setiap interval tertentu
 setInterval(() => {
-  logger.info('Menjalankan proses klaim dan transfer token...');
+  console.log("Menjalankan klaim dan transfer token...");
   autoClaimAndTransfer();
 }, CLAIM_INTERVAL * 1000);
 
-logger.info(`Skrip dijalankan dalam mode real-time, klaim dan transfer setiap ${CLAIM_INTERVAL} detik.`);
+console.log(`Skrip berjalan setiap ${CLAIM_INTERVAL} detik.`);
