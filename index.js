@@ -19,21 +19,15 @@ const TOKEN_ABI = [
 
 // Fungsi untuk mendeteksi path Chromium berdasarkan platform
 const getChromiumPath = () => {
-  // Deteksi platform (Termux atau VPS)
   if (process.platform === 'android') {
-    // Pastikan Chromium terinstal di Termux
     const chromiumPath = '/data/data/com.termux/files/usr/bin/chromium';
-    
-    // Cek apakah Chromium terinstal di Termux
     const fs = require('fs');
     if (!fs.existsSync(chromiumPath)) {
-      console.error('Chromium tidak ditemukan di Termux. Pastikan Anda sudah menginstal Chromium dengan perintah "pkg install chromium".');
-      process.exit(1); // Keluar dari skrip jika Chromium tidak ditemukan
+      console.error('Chromium tidak ditemukan di Termux. Pastikan Anda sudah menginstal Chromium.');
+      process.exit(1);
     }
-
-    return chromiumPath; // Jika Chromium ditemukan, kembalikan path
+    return chromiumPath;
   } else {
-    // Path untuk sistem VPS/Ubuntu/Debian
     return '/usr/bin/chromium-browser';
   }
 };
@@ -52,27 +46,25 @@ async function findButtonByText(page, buttonText) {
 // Fungsi login dan klaim token
 async function autoClaim() {
   const browser = await puppeteer.launch({
-    executablePath: getChromiumPath(),  // Menentukan path ke Chromium
-    headless: true,  // Menjalankan dalam mode headless
-    args: ['--no-sandbox', '--disable-setuid-sandbox'] // Menambahkan args untuk menghindari masalah root
+    executablePath: getChromiumPath(),
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'] 
   });
 
   const page = await browser.newPage();
   await page.goto(CLAIM_URL);
 
   try {
-    // Login menggunakan teks tombol
     const loginButton = await findButtonByText(page, "Login");
     await loginButton.click();
     console.log("Berhasil login.");
 
-    // Tunggu hingga tombol klaim muncul dan klik
-    await page.waitForTimeout(5000); // Tunggu 5 detik
+    await page.waitForTimeout(5000);
     const claimButton = await findButtonByText(page, "Claim");
     await claimButton.click();
     console.log("Token berhasil diklaim!");
 
-    await page.waitForTimeout(5000); // Tunggu 5 detik
+    await page.waitForTimeout(5000);
   } catch (error) {
     console.error(`Error saat login/klaim: ${error.message}`);
   } finally {
@@ -87,7 +79,6 @@ async function transferAllTokens() {
   const tokenContract = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, wallet);
 
   try {
-    // Ambil saldo token dari wallet
     const balance = await tokenContract.balanceOf(wallet.address);
     console.log(`Saldo token saat ini: ${ethers.utils.formatUnits(balance, 18)} token`);
 
@@ -96,11 +87,9 @@ async function transferAllTokens() {
       return;
     }
 
-    // Transfer seluruh saldo ke wallet vault
     const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance);
     console.log(`Transaksi dikirim: ${tx.hash}`);
 
-    // Tunggu konfirmasi transaksi
     const receipt = await tx.wait();
     console.log(`Transaksi berhasil! Block number: ${receipt.blockNumber}`);
   } catch (error) {
@@ -112,7 +101,7 @@ async function transferAllTokens() {
 async function autoClaimAndTransfer() {
   try {
     await autoClaim();
-    await transferAllTokens();  // Transfer semua token
+    await transferAllTokens();
   } catch (error) {
     console.error(`Error utama: ${error.message}`);
   }
