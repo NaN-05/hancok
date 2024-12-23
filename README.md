@@ -7,7 +7,6 @@ install di VPS
 
 - sudo apt update
 - sudo apt install nodejs
-- npm install puppeteer ethers dotenv
+- npm install puppeteer-core ethers winston dotenv
 - sudo apt-get install chromium-browser
-- npm install puppeteer-core
 
