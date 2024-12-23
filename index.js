@@ -53,7 +53,8 @@ async function findButtonByText(page, buttonText) {
 async function autoClaim() {
   const browser = await puppeteer.launch({
     executablePath: getChromiumPath(),  // Menentukan path ke Chromium
-    headless: true  // Menjalankan dalam mode headless
+    headless: true,  // Menjalankan dalam mode headless
+    args: ['--no-sandbox', '--disable-setuid-sandbox'] // Menambahkan args untuk menghindari masalah root
   });
 
   const page = await browser.newPage();
