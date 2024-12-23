@@ -1,6 +1,6 @@
 install di TERMUX
 
-- npm install puppeteer-core ethers dotenv
+- npm install puppeteer-core ethers dotenv wiston
 - pkg install chromium
 
 install di VPS
