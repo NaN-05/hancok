@@ -1,7 +1,7 @@
 require('dotenv').config();  // Memuat variabel dari file .env
 
 const puppeteer = require('puppeteer-core'); // Menggunakan puppeteer-core
-const { ethers } = require('ethers');
+const { ethers } = require('ethers'); // Pastikan ethers diimpor dengan benar
 
 // Mengakses variabel lingkungan dari .env
 const ALCHEMY_WSS_URL = process.env.ALCHEMY_WSS_URL;
@@ -34,7 +34,7 @@ const getChromiumPath = () => {
 
 // Fungsi untuk mencari tombol berdasarkan teks
 async function findButtonByText(page, buttonText) {
-  const [button] = await page.$x(`//button[contains(text(), '${buttonText}')]`);
+  const button = await page.$(`button:has-text("${buttonText}")`); // Menggunakan selector CSS
   if (button) {
     console.log(`Tombol "${buttonText}" ditemukan.`);
     return button;
@@ -48,7 +48,7 @@ async function autoClaim() {
   const browser = await puppeteer.launch({
     executablePath: getChromiumPath(),
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
   const page = await browser.newPage();
