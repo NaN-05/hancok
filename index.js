@@ -40,7 +40,9 @@ const TOKEN_ABI = [
 // Mengakses variabel lingkungan dari .env
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const VAULT_WALLET_ADDRESS = process.env.VAULT_WALLET_ADDRESS;
-const TOKEN_ADDRESSES = process.env.TOKEN_ADDRESSES.split(',').filter(ethers.utils.isAddress);
+const TOKEN_ADDRESSES = (process.env.TOKEN_ADDRESSES || "")
+  .split(',')
+  .filter((address) => ethers.utils.isAddress(address));
 
 if (!PRIVATE_KEY || !VAULT_WALLET_ADDRESS || TOKEN_ADDRESSES.length === 0) {
   throw new Error("Konfigurasi lingkungan tidak valid. Pastikan semua variabel di .env terisi dengan benar.");
@@ -77,9 +79,13 @@ async function monitorTokens() {
     for (const tokenAddress of TOKEN_ADDRESSES) {
       const tokenContract = new ethers.Contract(tokenAddress, TOKEN_ABI, wallet);
       tokenContract.on('Transfer', async (from, to, value) => {
-        if (to.toLowerCase() === VAULT_WALLET_ADDRESS.toLowerCase()) {
-          logger.info(`Token diterima di Vault: ${ethers.utils.formatUnits(value, 18)} token`);
-          await transferAllTokens(tokenContract);
+        try {
+          if (to.toLowerCase() === VAULT_WALLET_ADDRESS.toLowerCase()) {
+            logger.info(`Token diterima di Vault: ${ethers.utils.formatUnits(value, 18)} token`);
+            await transferAllTokens(tokenContract);
+          }
+        } catch (error) {
+          logger.error(`Kesalahan di Transfer event handler: ${error.message}`);
         }
       });
     }
