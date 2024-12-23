@@ -6,7 +6,8 @@ install di TERMUX
 install di VPS
 
 - sudo apt update
-- sudo apt install nodejs npm
+- sudo apt install nodejs
 - npm install puppeteer ethers dotenv
 - sudo apt-get install chromium-browser
+- npm install puppeteer-core
 
