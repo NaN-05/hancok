@@ -1,6 +1,6 @@
 require('dotenv').config();  // Memuat variabel dari file .env
 
-const puppeteer = require('puppeteer-core'); // Menggunakan puppeteer-core
+const axios = require('axios'); // Menggunakan axios untuk HTTP request
 const { ethers } = require('ethers'); // Pastikan ethers diimpor dengan benar
 
 // Mengakses variabel lingkungan dari .env
@@ -16,65 +16,6 @@ const TOKEN_ABI = [
   "function balanceOf(address account) public view returns (uint256)",
   "function transfer(address recipient, uint256 amount) public returns (bool)"
 ];
-
-// Fungsi untuk mendeteksi path Chromium berdasarkan platform
-const getChromiumPath = () => {
-  if (process.platform === 'android') {
-    const chromiumPath = '/data/data/com.termux/files/usr/bin/chromium';
-    const fs = require('fs');
-    if (!fs.existsSync(chromiumPath)) {
-      console.error('Chromium tidak ditemukan di Termux. Pastikan Anda sudah menginstal Chromium.');
-      process.exit(1);
-    }
-    return chromiumPath;
-  } else {
-    return '/usr/bin/chromium-browser';
-  }
-};
-
-// Fungsi untuk mencari tombol berdasarkan teks menggunakan evaluate
-async function findButtonByText(page, buttonText) {
-  const button = await page.evaluate((buttonText) => {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    return buttons.find(button => button.textContent.includes(buttonText));
-  }, buttonText);
-
-  if (button) {
-    console.log(`Tombol "${buttonText}" ditemukan.`);
-    return button;
-  } else {
-    throw new Error(`Tombol "${buttonText}" tidak ditemukan.`);
-  }
-}
-
-// Fungsi login dan klaim token
-async function autoClaim() {
-  const browser = await puppeteer.launch({
-    executablePath: getChromiumPath(),
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-
-  const page = await browser.newPage();
-  await page.goto(CLAIM_URL);
-
-  try {
-    const loginButton = await findButtonByText(page, "Login");
-    await loginButton.click();
-    console.log("Berhasil login.");
-
-    await page.waitForTimeout(5000);
-    const claimButton = await findButtonByText(page, "Claim");
-    await claimButton.click();
-    console.log("Token berhasil diklaim!");
-
-    await page.waitForTimeout(5000);
-  } catch (error) {
-    console.error(`Error saat login/klaim: ${error.message}`);
-  } finally {
-    await browser.close();
-  }
-}
 
 // Fungsi untuk mentransfer semua token
 async function transferAllTokens() {
@@ -101,11 +42,33 @@ async function transferAllTokens() {
   }
 }
 
+// Fungsi untuk klaim token melalui API
+async function claimToken() {
+  try {
+    // Siapkan data yang diperlukan untuk klaim
+    const walletAddress = process.env.WALLET_ADDRESS; // Pastikan alamat wallet sudah ada di .env
+
+    // Kirim permintaan POST ke API untuk klaim
+    const response = await axios.post('https://asia-east2-kip-genesis-nft-4c1d8.cloudfunctions.net/getBatchClaimParam', {
+      walletAddress: walletAddress
+    });
+
+    // Periksa apakah klaim berhasil
+    if (response.status === 200 && response.data.success) {
+      console.log("Token berhasil diklaim!");
+    } else {
+      console.log('Klaim gagal:', response.data.message || 'Tidak ada pesan error.');
+    }
+  } catch (error) {
+    console.error('Error saat klaim token:', error.message);
+  }
+}
+
 // Fungsi utama untuk klaim dan transfer
 async function autoClaimAndTransfer() {
   try {
-    await autoClaim();
-    await transferAllTokens();
+    await claimToken();  // Klaim token melalui API
+    await transferAllTokens();  // Transfer semua token
   } catch (error) {
     console.error(`Error utama: ${error.message}`);
   }
