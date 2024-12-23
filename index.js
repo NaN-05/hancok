@@ -19,9 +19,21 @@ const TOKEN_ABI = [
 
 // Fungsi untuk mendeteksi path Chromium berdasarkan platform
 const getChromiumPath = () => {
+  // Deteksi platform (Termux atau VPS)
   if (process.platform === 'android') {
-    return '/data/data/com.termux/files/usr/bin/chromium';
+    // Pastikan Chromium terinstal di Termux
+    const chromiumPath = '/data/data/com.termux/files/usr/bin/chromium';
+    
+    // Cek apakah Chromium terinstal di Termux
+    const fs = require('fs');
+    if (!fs.existsSync(chromiumPath)) {
+      console.error('Chromium tidak ditemukan di Termux. Pastikan Anda sudah menginstal Chromium dengan perintah "pkg install chromium".');
+      process.exit(1); // Keluar dari skrip jika Chromium tidak ditemukan
+    }
+
+    return chromiumPath; // Jika Chromium ditemukan, kembalikan path
   } else {
+    // Path untuk sistem VPS/Ubuntu/Debian
     return '/usr/bin/chromium-browser';
   }
 };
@@ -40,8 +52,8 @@ async function findButtonByText(page, buttonText) {
 // Fungsi login dan klaim token
 async function autoClaim() {
   const browser = await puppeteer.launch({
-    executablePath: getChromiumPath(),
-    headless: true
+    executablePath: getChromiumPath(),  // Menentukan path ke Chromium
+    headless: true  // Menjalankan dalam mode headless
   });
 
   const page = await browser.newPage();
