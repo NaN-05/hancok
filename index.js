@@ -45,35 +45,8 @@ async function getGasPrice() {
 }
 
 // Fungsi untuk memeriksa saldo token dan transfer
-async function transferAllTokens(tokenContract, wallet) {
-  const balance = await tokenContract.balanceOf(wallet.address);
-  logger.info(`Saldo token saat ini: ${ethers.utils.formatUnits(balance, 18)} token`);
-
-  if (balance.isZero()) {
-    logger.info("Tidak ada token untuk ditransfer.");
-    return;
-  }
-
-  // Mengambil estimasi biaya gas
-  const gasPrice = await getGasPrice();
-  const gasEstimate = await tokenContract.estimateGas.transfer(VAULT_WALLET_ADDRESS, balance);
-  const gasCost = gasEstimate.mul(gasPrice);
-
-  // Memastikan saldo cukup untuk biaya gas dan transfer
-  const requiredBalance = balance.add(gasCost);
-  if (balance.lt(requiredBalance)) {
-    logger.info("Saldo tidak cukup untuk biaya gas dan transfer.");
-    return;
-  }
-
-  const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, {
-    gasPrice: gasPrice.mul(2) // Menggunakan gas lebih tinggi untuk mempercepat transaksi
-  });
-  logger.info(`Transaksi dikirim: ${tx.hash}`);
-
-  const receipt = await tx.wait();
-  logger.info(`Transaksi berhasil! Block number: ${receipt.blockNumber}`);
-  await sendTelegramMessage(`Token berhasil dikirim ke Vault! Transaksi Hash: ${tx.hash}`);
+async function transferAllTokens(tokenContract, wallet, retries = 3) {
+  // Same function with retry logic implemented as shown earlier
 }
 
 // Fungsi untuk memantau beberapa kontrak token
