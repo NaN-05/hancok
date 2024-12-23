@@ -89,7 +89,7 @@ async function transferAllTokens() {
   try {
     // Ambil saldo token dari wallet
     const balance = await tokenContract.balanceOf(wallet.address);
-    console.log(`Saldo token saat ini: ${ethers.formatUnits(balance, 18)} token`);
+    console.log(`Saldo token saat ini: ${ethers.utils.formatUnits(balance, 18)} token`);
 
     if (balance.isZero()) {
       console.log("Tidak ada token untuk ditransfer.");
