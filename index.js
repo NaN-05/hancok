@@ -53,18 +53,14 @@ async function findButtonByText(page, buttonText) {
 async function autoClaim() {
   const browser = await puppeteer.launch({
     executablePath: getChromiumPath(),  // Menentukan path ke Chromium
-    headless: true  // Menjalankan dalam mode headless
+    headless: true,  // Menjalankan dalam mode headless
+    args: ['--no-sandbox', '--disable-setuid-sandbox'] // Menambahkan args untuk menghindari masalah root
   });
 
   const page = await browser.newPage();
-  
-  // Menambahkan log untuk memastikan URL yang digunakan benar
-  console.log(`Navigating to: ${CLAIM_URL}`);
-  
-  try {
-    await page.goto(CLAIM_URL, { waitUntil: 'domcontentloaded' });  // Menunggu halaman dimuat sepenuhnya
-    console.log("Halaman dimuat dengan sukses.");
+  await page.goto(CLAIM_URL);
 
+  try {
     // Login menggunakan teks tombol
     const loginButton = await findButtonByText(page, "Login");
     await loginButton.click();
