@@ -1,10 +1,10 @@
 require('dotenv').config();  // Memuat variabel dari file .env
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core'); // Menggunakan puppeteer-core
 const { ethers } = require('ethers');
 
 // Mengakses variabel lingkungan dari .env
-const ALCHEMY_WSS_URL = process.env.ALCHEMY_WSS_URL;  // Alchemy WSS URL
+const ALCHEMY_WSS_URL = process.env.ALCHEMY_WSS_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const VAULT_WALLET_ADDRESS = process.env.VAULT_WALLET_ADDRESS;
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
@@ -22,9 +22,25 @@ const TOKEN_ABI = [
   "function allowance(address owner, address spender) public view returns (uint256)"
 ];
 
+// Fungsi untuk mendeteksi path Chromium berdasarkan platform (Termux atau VPS)
+const getChromiumPath = () => {
+  // Deteksi platform (Termux atau VPS)
+  if (process.platform === 'android') {
+    // Path untuk Chromium di Termux
+    return '/data/data/com.termux/files/usr/bin/chromium';
+  } else {
+    // Path untuk Chromium di VPS (biasanya di Ubuntu/Debian)
+    return '/usr/bin/chromium-browser';
+  }
+};
+
 // Fungsi untuk login dan klaim token
 async function autoClaim() {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({
+    executablePath: getChromiumPath(),  // Menentukan path ke Chromium berdasarkan platform
+    headless: true  // Menjalankan dalam mode headless
+  });
+
   const page = await browser.newPage();
 
   // Arahkan ke halaman klaim token menggunakan URL dari .env
