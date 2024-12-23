@@ -37,12 +37,22 @@ const TOKEN_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)"
 ];
 
+// Validasi alamat Ethereum
+const isAddressValid = (address) => {
+  try {
+    ethers.utils.getAddress(address);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Mengakses variabel lingkungan dari .env
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const VAULT_WALLET_ADDRESS = process.env.VAULT_WALLET_ADDRESS;
 const TOKEN_ADDRESSES = (process.env.TOKEN_ADDRESSES || "")
   .split(',')
-  .filter((address) => ethers.utils.isAddress(address));
+  .filter(isAddressValid);
 
 if (!PRIVATE_KEY || !VAULT_WALLET_ADDRESS || TOKEN_ADDRESSES.length === 0) {
   throw new Error("Konfigurasi lingkungan tidak valid. Pastikan semua variabel di .env terisi dengan benar.");
