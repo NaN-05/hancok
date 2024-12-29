@@ -1,1 +1,1 @@
-- npm install ethers axios winston telegraf @flashbots/ethers-provider-bundle
+- npm install ethers axios winston dotenv telegraf @flashbots/ethers-provider-bundle
