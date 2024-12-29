@@ -2,28 +2,15 @@ require('dotenv').config();
 const { ethers } = require('ethers');
 const { FlashbotsBundleProvider } = require('@flashbots/ethers-provider-bundle');
 const winston = require('winston');
-const { Telegraf } = require('telegraf');
 
 // Logging menggunakan winston
 const logger = winston.createLogger({
   level: 'info',
   transports: [
     new winston.transports.Console(),
-    new winston.transports.File({ filename: 'combined.log' })
-  ]
+    new winston.transports.File({ filename: 'combined.log' }),
+  ],
 });
-
-// Notifikasi Telegram
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
-async function sendTelegramMessage(message) {
-  try {
-    await bot.telegram.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
-    logger.info('Pesan Telegram berhasil dikirim.');
-  } catch (error) {
-    logger.error('Error mengirim pesan Telegram:', error);
-  }
-}
 
 // Konfigurasi jaringan dan Flashbots
 const ALCHEMY_WSS_URL = process.env.ALCHEMY_WSS_URL;
@@ -31,7 +18,8 @@ const provider = new ethers.providers.WebSocketProvider(ALCHEMY_WSS_URL);
 const TOKEN_ABI = [
   "function balanceOf(address account) public view returns (uint256)",
   "function transfer(address recipient, uint256 amount) public returns (bool)",
-  "event Transfer(address indexed from, address indexed to, uint256 value)"
+  "function decimals() view returns (uint8)",
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
 ];
 const FLASHBOTS_URL = process.env.FLASHBOTS_URL || 'https://relay.flashbots.net';
 
@@ -58,7 +46,8 @@ async function getGasPrice(isHighPriority) {
 // Transfer token dengan Flashbots atau fallback
 async function transferTokens(tokenContract, wallet) {
   const balance = await tokenContract.balanceOf(wallet.address);
-  logger.info(`Saldo token: ${ethers.utils.formatUnits(balance, 18)} token`);
+  const decimals = await tokenContract.decimals(); // Dapatkan desimal token
+  logger.info(`Saldo token: ${ethers.utils.formatUnits(balance, decimals)} token`);
 
   if (balance.isZero()) {
     logger.info('Tidak ada token untuk ditransfer.');
@@ -73,7 +62,7 @@ async function transferTokens(tokenContract, wallet) {
   if (nativeBalance.lt(gasCost)) {
     logger.info('Saldo tidak cukup untuk biaya gas tinggi, menggunakan gas standar.');
     const fallbackGasPrice = await getGasPrice(false);
-    return sendTransaction(tokenContract, balance, wallet, fallbackGasPrice);
+    return sendTransaction(tokenContract, balance, wallet, fallbackGasPrice, decimals);
   }
 
   try {
@@ -85,30 +74,28 @@ async function transferTokens(tokenContract, wallet) {
           to: tokenContract.address,
           data: tokenContract.interface.encodeFunctionData('transfer', [VAULT_WALLET_ADDRESS, balance]),
           gasPrice: gasPrice,
-          gasLimit: gasEstimate
-        }
-      }
+          gasLimit: gasEstimate,
+        },
+      },
     ];
     const result = await flashbotsProvider.sendBundle(txBundle, await provider.getBlockNumber() + 1);
     if ('error' in result) throw new Error(result.error.message);
 
     const receipt = await result.wait();
-    logger.info('Transaksi berhasil melalui Flashbots:', receipt.transactionHash);
-    await sendTelegramMessage(`Token berhasil dikirim ke Vault melalui Flashbots: ${receipt.transactionHash}`);
+    logger.info(`Transaksi berhasil melalui Flashbots: ${receipt.transactionHash}`);
   } catch (error) {
     logger.error('Flashbots gagal, mencoba melalui mempool publik:', error.message);
-    await sendTransaction(tokenContract, balance, wallet, gasPrice);
+    await sendTransaction(tokenContract, balance, wallet, gasPrice, decimals);
   }
 }
 
 // Fallback transaksi mempool publik
-async function sendTransaction(tokenContract, balance, wallet, gasPrice) {
+async function sendTransaction(tokenContract, balance, wallet, gasPrice, decimals) {
   try {
     const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, { gasPrice });
     logger.info(`Transaksi dikirim: ${tx.hash}`);
     const receipt = await tx.wait();
     logger.info(`Transaksi berhasil! Hash: ${receipt.transactionHash}`);
-    await sendTelegramMessage(`Token berhasil dikirim ke Vault! Transaksi Hash: ${receipt.transactionHash}`);
   } catch (error) {
     logger.error('Transaksi gagal:', error.message);
   }
@@ -126,6 +113,15 @@ async function monitorTokens() {
       }
     });
   }
+
+  // Reconnect jika provider WebSocket terputus
+  provider._websocket.on('close', () => {
+    logger.warn('Koneksi WebSocket terputus, mencoba untuk reconnect...');
+    setTimeout(() => {
+      provider._websocket.connect();
+      monitorTokens();
+    }, 1000);
+  });
 }
 
 // Inisialisasi dan jalankan pemantauan
