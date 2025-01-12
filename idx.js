@@ -49,7 +49,7 @@ const TOKEN_ADDRESSES = process.env.TOKEN_ADDRESSES.split(',');
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 // Tentukan saldo minimum untuk biaya gas (misalnya 0.01 ETH)
-const MIN_GAS_BALANCE = ethers.utils.parseEther("0.0001"); // Minimum 0.01 ETH untuk biaya gas
+const MIN_GAS_BALANCE = ethers.utils.parseEther("0.001"); // Minimum 0.01 ETH untuk biaya gas
 
 // Fungsi untuk mendapatkan harga gas
 async function getGasPrice(isHighPriority) {
