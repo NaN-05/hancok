@@ -48,6 +48,9 @@ const TOKEN_ADDRESSES = process.env.TOKEN_ADDRESSES.split(',');
 
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
+// Tentukan saldo minimum untuk biaya gas (misalnya 0.01 ETH)
+const MIN_GAS_BALANCE = ethers.utils.parseEther("0.0001"); // Minimum 0.01 ETH untuk biaya gas
+
 // Fungsi untuk mendapatkan harga gas
 async function getGasPrice(isHighPriority) {
   const gasPrice = await provider.getGasPrice();
@@ -67,9 +70,9 @@ async function transferTokens(tokenContract, wallet) {
   const gasCost = gasEstimate.mul(gasPrice);
   const nativeBalance = await provider.getBalance(wallet.address);
 
-  // Periksa apakah saldo native cukup untuk biaya gas
-  if (nativeBalance.lt(gasCost)) {
-    logger.warn('Saldo tidak cukup untuk melakukan transfer.');
+  // Periksa apakah saldo native cukup untuk biaya gas dan lebih besar dari saldo minimum
+  if (nativeBalance.lt(gasCost) || nativeBalance.lt(MIN_GAS_BALANCE)) {
+    logger.warn('Saldo tidak cukup untuk melakukan transfer atau di bawah saldo minimum yang dibutuhkan.');
     return;
   }
 
