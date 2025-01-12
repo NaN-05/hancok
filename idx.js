@@ -67,12 +67,14 @@ async function transferTokens(tokenContract, wallet) {
   const gasCost = gasEstimate.mul(gasPrice);
   const nativeBalance = await provider.getBalance(wallet.address);
 
+  // Periksa apakah saldo native cukup untuk biaya gas
   if (nativeBalance.lt(gasCost)) {
     logger.warn('Saldo tidak cukup untuk melakukan transfer.');
     return;
   }
 
   try {
+    // Kirim token ke vault wallet jika saldo cukup
     logger.info('Mengirim transaksi token...');
     const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, { gasPrice });
     logger.info(`Transaksi dikirim: ${tx.hash}`);
