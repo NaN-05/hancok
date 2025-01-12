@@ -31,6 +31,7 @@ if (ethers.providers && ethers.providers.WebSocketProvider) {
   provider = new ethers.WebSocketProvider(WSS_URL);
   logger.info('Menggunakan ethers.js v6.');
 } else {
+  logger.error('Library ethers.js tidak mendukung WebSocketProvider.');
   throw new Error('Library ethers.js tidak mendukung WebSocketProvider.');
 }
 
@@ -79,6 +80,7 @@ async function transferTokens(tokenContract, wallet) {
     logger.info(`Transaksi berhasil: ${receipt.transactionHash}`);
   } catch (error) {
     logger.error('Transaksi gagal:', error.message);
+    logger.error('Stack Trace:', error.stack); // Menambahkan stack trace untuk membantu debugging
   }
 }
 
@@ -111,6 +113,7 @@ async function startMonitoring() {
     await monitorTokens();
   } catch (error) {
     logger.error('Error utama:', error.message);
+    logger.error('Stack Trace:', error.stack); // Menambahkan stack trace untuk melihat di mana kesalahan terjadi
   }
 }
 
