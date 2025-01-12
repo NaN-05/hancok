@@ -14,16 +14,25 @@ const logger = winston.createLogger({
 // Validasi variabel lingkungan
 if (!process.env.WSS_URL || !process.env.PRIVATE_KEY || !process.env.VAULT_WALLET_ADDRESS || !process.env.TOKEN_ADDRESSES) {
   logger.error('Pastikan semua variabel lingkungan telah diatur dengan benar.');
-  logger.error(`WSS_URL: ${process.env.WSS_URL || 'Tidak ditemukan'}`);
-  logger.error(`PRIVATE_KEY: ${process.env.PRIVATE_KEY ? 'Diterima' : 'Tidak ditemukan'}`);
-  logger.error(`VAULT_WALLET_ADDRESS: ${process.env.VAULT_WALLET_ADDRESS || 'Tidak ditemukan'}`);
-  logger.error(`TOKEN_ADDRESSES: ${process.env.TOKEN_ADDRESSES || 'Tidak ditemukan'}`);
   throw new Error('Pastikan semua variabel lingkungan telah diatur dengan benar.');
 }
 
 // Konfigurasi jaringan
-const WSS_URL = process.env.WSS_URL; // URL WebSocket jaringan target
-const provider = new ethers.providers.WebSocketProvider(WSS_URL);
+const WSS_URL = process.env.WSS_URL;
+
+// Dukungan untuk ethers.js v5 dan v6
+let provider;
+if (ethers.providers && ethers.providers.WebSocketProvider) {
+  // Untuk ethers.js v5
+  provider = new ethers.providers.WebSocketProvider(WSS_URL);
+  logger.info('Menggunakan ethers.js v5.');
+} else if (ethers.WebSocketProvider) {
+  // Untuk ethers.js v6
+  provider = new ethers.WebSocketProvider(WSS_URL);
+  logger.info('Menggunakan ethers.js v6.');
+} else {
+  throw new Error('Library ethers.js tidak mendukung WebSocketProvider.');
+}
 
 const TOKEN_ABI = [
   "function balanceOf(address account) public view returns (uint256)",
@@ -62,7 +71,6 @@ async function transferTokens(tokenContract, wallet) {
     return;
   }
 
-  // Kirim transaksi melalui mempool publik (untuk jaringan non-Flashbots seperti Base atau BSC)
   try {
     logger.info('Mengirim transaksi token...');
     const tx = await tokenContract.transfer(VAULT_WALLET_ADDRESS, balance, { gasPrice });
